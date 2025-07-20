@@ -3,7 +3,10 @@ use alloy_genesis::ChainConfig;
 use alloy_json_rpc::RpcObject;
 use alloy_primitives::{Address, Bytes, B256};
 use alloy_rpc_types_debug::ExecutionWitness;
-use alloy_rpc_types_eth::{Block, Bundle, StateContext};
+use alloy_rpc_types_eth::{
+    state::StateOverride,
+    Block, BlockOverrides, Bundle, StateContext,
+};
 use alloy_rpc_types_trace::geth::{
     BlockTraceResult, GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, TraceResult,
 };
@@ -155,6 +158,18 @@ pub trait DebugApi<TxReq: RpcObject> {
         &self,
         hash: B256,
     ) -> RpcResult<ExecutionWitness>;
+
+    /// Executes the given transactions sequentially on top of the state at the provided block and
+    /// returns the hashed post state after execution. This behaves similar to block execution and
+    /// is optimized for speed.
+    #[method(name = "stateDiffBundle")]
+    async fn debug_state_diff_bundle(
+        &self,
+        txs: Vec<TxReq>,
+        block_id: Option<BlockId>,
+        state_overrides: Option<StateOverride>,
+        block_overrides: Option<Box<BlockOverrides>>,
+    ) -> RpcResult<HashedPostState>;
 
     /// Sets the logging backtrace location. When a backtrace location is set and a log message is
     /// emitted at that location, the stack of the goroutine executing the log statement will

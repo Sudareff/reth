@@ -51,8 +51,8 @@ use reth_rpc_eth_api::{
 use reth_rpc_eth_types::{receipt::EthReceiptConverter, EthConfig, EthSubscriptionIdProvider};
 use reth_rpc_layer::{AuthLayer, Claims, CompressionLayer, JwtAuthValidator, JwtSecret};
 use reth_storage_api::{
-    AccountReader, BlockReader, BlockReaderIdExt, ChangeSetReader, FullRpcProvider, ProviderBlock,
-    StateProviderFactory,
+    AccountReader, BlockReader, BlockReaderIdExt, ChangeSetReader, FullRpcProvider,
+    HashedPostStateProvider, ProviderBlock, StateProviderFactory,
 };
 use reth_tasks::{pool::BlockingTaskGuard, TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::{noop::NoopTransactionPool, TransactionPool};
@@ -317,7 +317,8 @@ where
     Provider: FullRpcProvider<Block = N::Block, Receipt = N::Receipt, Header = N::BlockHeader>
         + CanonStateSubscriptions<Primitives = N>
         + AccountReader
-        + ChangeSetReader,
+        + ChangeSetReader
+        + HashedPostStateProvider,
     Pool: TransactionPool + 'static,
     Network: NetworkInfo + Peers + Clone + 'static,
     EvmConfig: ConfigureEvm<Primitives = N> + 'static,
@@ -713,6 +714,7 @@ where
     where
         EthApi: EthApiSpec + EthTransactions + TraceExt,
         EvmConfig::Primitives: NodePrimitives<Block = ProviderBlock<EthApi::Provider>>,
+        EthApi::Provider: HashedPostStateProvider,
     {
         let debug_api = self.debug_api();
         self.modules.insert(RethRpcModule::Debug, debug_api.into_rpc().into());
@@ -822,6 +824,7 @@ where
     where
         EthApi: EthApiSpec + EthTransactions + TraceExt,
         EvmConfig::Primitives: NodePrimitives<Block = ProviderBlock<EthApi::Provider>>,
+        EthApi::Provider: HashedPostStateProvider,
     {
         DebugApi::new(
             self.eth_api().clone(),
@@ -856,7 +859,8 @@ where
     Provider: FullRpcProvider<Block = N::Block>
         + CanonStateSubscriptions<Primitives = N>
         + AccountReader
-        + ChangeSetReader,
+        + ChangeSetReader
+        + HashedPostStateProvider,
     Pool: TransactionPool + 'static,
     Network: NetworkInfo + Peers + Clone + 'static,
     EthApi: FullEthApiServer<Provider = Provider, Pool = Pool>,
