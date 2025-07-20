@@ -713,6 +713,7 @@ where
     where
         EthApi: EthApiSpec + EthTransactions + TraceExt,
         EvmConfig::Primitives: NodePrimitives<Block = ProviderBlock<EthApi::Provider>>,
+        EthApi::Provider: HashedPostStateProvider,
     {
         let debug_api = self.debug_api();
         self.modules.insert(RethRpcModule::Debug, debug_api.into_rpc().into());
@@ -822,6 +823,7 @@ where
     where
         EthApi: EthApiSpec + EthTransactions + TraceExt,
         EvmConfig::Primitives: NodePrimitives<Block = ProviderBlock<EthApi::Provider>>,
+        EthApi::Provider: HashedPostStateProvider,
     {
         DebugApi::new(
             self.eth_api().clone(),
@@ -856,7 +858,8 @@ where
     Provider: FullRpcProvider<Block = N::Block>
         + CanonStateSubscriptions<Primitives = N>
         + AccountReader
-        + ChangeSetReader,
+        + ChangeSetReader
+        + HashedPostStateProvider,
     Pool: TransactionPool + 'static,
     Network: NetworkInfo + Peers + Clone + 'static,
     EthApi: FullEthApiServer<Provider = Provider, Pool = Pool>,
