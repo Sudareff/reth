@@ -9,6 +9,7 @@ use alloy_rpc_types_engine::ExecutionData;
 use jsonrpsee::{core::middleware::layer::Either, RpcModule};
 use reth_chain_state::CanonStateSubscriptions;
 use reth_chainspec::{ChainSpecProvider, EthereumHardforks};
+use reth_provider::HashedPostStateProvider;
 use reth_node_api::{
     AddOnsContext, BlockTy, EngineTypes, EngineValidator, FullNodeComponents, FullNodeTypes,
     NodeAddOns, NodeTypes, PayloadTypes, ReceiptTy,
@@ -626,7 +627,7 @@ where
 impl<N, EthB, EV, EB, RpcMiddleware> RpcAddOns<N, EthB, EV, EB, RpcMiddleware>
 where
     N: FullNodeComponents,
-    N::Provider: ChainSpecProvider<ChainSpec: EthereumHardforks>,
+    N::Provider: ChainSpecProvider<ChainSpec: EthereumHardforks> + HashedPostStateProvider,
     EthB: EthApiBuilder<N>,
     EV: EngineValidatorBuilder<N>,
     EB: EngineApiBuilder<N>,
@@ -903,10 +904,12 @@ where
     }
 }
 
-impl<N, EthB, EV, EB, RpcMiddleware> NodeAddOns<N> for RpcAddOns<N, EthB, EV, EB, RpcMiddleware>
+impl<N, EthB, EV, EB, RpcMiddleware> NodeAddOns<N>
+    for RpcAddOns<N, EthB, EV, EB, RpcMiddleware>
 where
     N: FullNodeComponents,
-    <N as FullNodeTypes>::Provider: ChainSpecProvider<ChainSpec: EthereumHardforks>,
+    <N as FullNodeTypes>::Provider:
+        ChainSpecProvider<ChainSpec: EthereumHardforks> + HashedPostStateProvider,
     EthB: EthApiBuilder<N>,
     EV: EngineValidatorBuilder<N>,
     EB: EngineApiBuilder<N>,

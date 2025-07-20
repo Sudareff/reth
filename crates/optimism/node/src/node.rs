@@ -55,6 +55,7 @@ use reth_optimism_txpool::{
     OpPooledTx,
 };
 use reth_provider::{providers::ProviderFactoryBuilder, CanonStateSubscriptions};
+use reth_provider::HashedPostStateProvider;
 use reth_rpc_api::{DebugApiServer, L2EthApiExtServer};
 use reth_rpc_server_types::RethRpcModule;
 use reth_tracing::tracing::{debug, info};
@@ -202,6 +203,7 @@ impl OpNode {
 impl<N> Node<N> for OpNode
 where
     N: FullNodeTypes<Types: OpFullNodeTypes + OpNodeTypes>,
+    <N as FullNodeTypes>::Provider: HashedPostStateProvider,
 {
     type ComponentsBuilder = ComponentsBuilder<
         N,
@@ -238,6 +240,7 @@ where
 impl<N> DebugNode<N> for OpNode
 where
     N: FullNodeComponents<Types = Self>,
+    <N as FullNodeTypes>::Provider: HashedPostStateProvider,
 {
     type RpcBlock = alloy_rpc_types_eth::Block<op_alloy_consensus::OpTxEnvelope>;
 
@@ -433,6 +436,7 @@ where
     >,
     N::Types: NodeTypes<Primitives: OpPayloadPrimitives>,
     EthB: EthApiBuilder<N>,
+    <N as FullNodeTypes>::Provider: HashedPostStateProvider,
     <N::Pool as TransactionPool>::Transaction: OpPooledTx,
     EV: EngineValidatorBuilder<N>,
     EB: EngineApiBuilder<N>,
@@ -547,6 +551,7 @@ where
         Types: OpFullNodeTypes,
         Evm: ConfigureEvm<NextBlockEnvCtx = OpNextBlockEnvAttributes>,
     >,
+    <N as FullNodeTypes>::Provider: HashedPostStateProvider,
     <<N as FullNodeComponents>::Pool as TransactionPool>::Transaction: OpPooledTx,
     EthB: EthApiBuilder<N>,
     EV: EngineValidatorBuilder<N>,
