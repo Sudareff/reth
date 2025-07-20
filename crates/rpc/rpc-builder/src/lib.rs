@@ -54,6 +54,7 @@ use reth_storage_api::{
     AccountReader, BlockReader, BlockReaderIdExt, ChangeSetReader, FullRpcProvider, ProviderBlock,
     StateProviderFactory,
 };
+use reth_storage_api::HashedPostStateProvider;
 use reth_tasks::{pool::BlockingTaskGuard, TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::{noop::NoopTransactionPool, TransactionPool};
 use serde::{Deserialize, Serialize};
