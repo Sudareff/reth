@@ -102,3 +102,34 @@ The block can optionally be specified either by hash or by number as the second 
 | Client | Method invocation                                                     |
 | ------ | --------------------------------------------------------------------- |
 | RPC    | `{"method": "debug_traceCall", "params": [call, block_number, opts]}` |
+
+## `debug_stateDiffBundle`
+
+Executes a list of transactions sequentially on top of the state at the provided block and returns the resulting hashed post state.
+
+Example:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "debug_stateDiffBundle",
+  "params": [[{"from": "0x407d73d8a49eeb85d32cf465507dd71d507100c1", "to": "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b", "value": "0x186a0"}], "latest", null, null]
+}
+```
+
+Example output:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "accounts": {
+      "0x…": null,
+      "0x…": {"nonce": "0x1", "balance": "0x0", "bytecodeHash": "0x…"}
+    },
+    "storages": {}
+  }
+}
+```

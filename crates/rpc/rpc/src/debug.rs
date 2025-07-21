@@ -5,7 +5,8 @@ use alloy_primitives::{uint, Address, Bytes, B256};
 use alloy_rlp::{Decodable, Encodable};
 use alloy_rpc_types_debug::ExecutionWitness;
 use alloy_rpc_types_eth::{
-    state::EvmOverrides, Block as RpcBlock, BlockError, Bundle, StateContext, TransactionInfo,
+    state::{EvmOverrides, StateOverride},
+    Block as RpcBlock, BlockError, BlockOverrides, Bundle, StateContext, TransactionInfo,
 };
 use alloy_rpc_types_trace::geth::{
     call::FlatCallFrame, BlockTraceResult, FourByteFrame, GethDebugBuiltInTracerType,
@@ -33,11 +34,14 @@ use reth_rpc_eth_api::{
 use reth_rpc_eth_types::{EthApiError, StateCacheDb};
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_storage_api::{
-    BlockIdReader, BlockReaderIdExt, HeaderProvider, ProviderBlock, ReceiptProviderIdExt,
-    StateProofProvider, StateProviderFactory, StateRootProvider, TransactionVariant,
+    BlockIdReader, BlockReaderIdExt, HashedPostStateProvider, HeaderProvider, ProviderBlock,
+    ReceiptProviderIdExt, StateProofProvider, StateProviderFactory, StateRootProvider,
+    TransactionVariant,
 };
 use reth_tasks::pool::BlockingTaskGuard;
-use reth_trie_common::{updates::TrieUpdates, HashedPostState};
+use reth_trie_common::{updates::TrieUpdates, HashedPostState, KeccakKeyHasher};
+use tracing::info;
+use alloy_evm::overrides::{apply_block_overrides, apply_state_overrides};
 use revm::{context_interface::Transaction, state::EvmState, DatabaseCommit};
 use revm_inspectors::tracing::{
     FourByteInspector, MuxInspector, TracingInspector, TracingInspectorConfig, TransactionContext,
@@ -80,6 +84,7 @@ impl<Eth, Evm> DebugApi<Eth, Evm>
 where
     Eth: EthApiTypes + TraceExt + 'static,
     Evm: ConfigureEvm<Primitives: NodePrimitives<Block = ProviderBlock<Eth::Provider>>> + 'static,
+    Eth::Provider: HashedPostStateProvider,
 {
     /// Acquires a permit to execute a tracing call.
     async fn acquire_trace_permit(&self) -> Result<OwnedSemaphorePermit, AcquireError> {
@@ -894,6 +899,62 @@ where
             })
             .await
     }
+
+    /// Executes the given transactions sequentially on top of the state at the provided block.
+    ///
+    /// This reuses the same execution strategy as block insertion which keeps the
+    /// state database warm and avoids additional tracing overhead. Optional
+    /// `state_overrides` and `block_overrides` behave the same as in
+    /// [`debug_traceCall`]. The method returns the resulting [`HashedPostState`]
+    /// that contains only the touched accounts and storage slots.
+    pub async fn debug_state_diff_bundle(
+        &self,
+        txs: Vec<RpcTxReq<Eth::NetworkTypes>>,
+        block_id: Option<BlockId>,
+        state_overrides: Option<StateOverride>,
+        block_overrides: Option<Box<BlockOverrides>>,
+    ) -> Result<HashedPostState, Eth::Error> {
+        let block_id = block_id.unwrap_or_default();
+        let ((mut evm_env, _), _) = futures::try_join!(
+            self.eth_api().evm_env_at(block_id),
+            self.eth_api().recovered_block(block_id)
+        )?;
+
+        let this = self.clone();
+        self.eth_api()
+            .spawn_with_state_at_block(block_id, move |state| {
+                let mut db = State::builder()
+                    .with_database(StateProviderDatabase::new(state))
+                    .with_bundle_update()
+                    .without_state_clear()
+                    .build();
+
+                if let Some(state_overrides) = state_overrides {
+                    apply_state_overrides(state_overrides, &mut db)
+                        .map_err(Eth::Error::from_eth_err)?;
+                }
+
+                if let Some(block_overrides) = block_overrides {
+                    apply_block_overrides(*block_overrides, &mut db, &mut evm_env.block_env);
+                }
+
+                info!(target: "rpc::debug", txs=txs.len(), "Executing stateDiffBundle");
+
+                for tx in txs {
+                    let (env, tx_env) = this
+                        .eth_api()
+                        .prepare_call_env(evm_env.clone(), tx, &mut db, EvmOverrides::default())?;
+                    let res = this.eth_api().transact(&mut db, env, tx_env)?;
+                    db.commit(res.state);
+                }
+
+                let bundle_state = db.take_bundle();
+                let hashed = HashedPostState::from_bundle_state::<KeccakKeyHasher>(&bundle_state.state);
+                info!(target: "rpc::debug", accounts=hashed.accounts.len(), storages=hashed.storages.len(), "Finished stateDiffBundle");
+                Ok(hashed)
+            })
+            .await
+    }
 }
 
 #[async_trait]
@@ -901,6 +962,7 @@ impl<Eth, Evm> DebugApiServer<RpcTxReq<Eth::NetworkTypes>> for DebugApi<Eth, Evm
 where
     Eth: EthApiTypes + EthTransactions + TraceExt + 'static,
     Evm: ConfigureEvm<Primitives: NodePrimitives<Block = ProviderBlock<Eth::Provider>>> + 'static,
+    Eth::Provider: HashedPostStateProvider,
 {
     /// Handler for `debug_getRawHeader`
     async fn raw_header(&self, block_id: BlockId) -> RpcResult<Bytes> {
@@ -1255,6 +1317,18 @@ where
         block_id: Option<BlockId>,
     ) -> RpcResult<(B256, TrieUpdates)> {
         Self::debug_state_root_with_updates(self, hashed_state, block_id).await.map_err(Into::into)
+    }
+
+    async fn debug_state_diff_bundle(
+        &self,
+        txs: Vec<RpcTxReq<Eth::NetworkTypes>>,
+        block_id: Option<BlockId>,
+        state_overrides: Option<StateOverride>,
+        block_overrides: Option<Box<BlockOverrides>>,
+    ) -> RpcResult<HashedPostState> {
+        Self::debug_state_diff_bundle(self, txs, block_id, state_overrides, block_overrides)
+            .await
+            .map_err(Into::into)
     }
 
     async fn debug_stop_cpu_profile(&self) -> RpcResult<()> {
