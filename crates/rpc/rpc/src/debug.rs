@@ -42,12 +42,14 @@ use reth_tasks::pool::BlockingTaskGuard;
 use reth_trie_common::{updates::TrieUpdates, HashedPostState, KeccakKeyHasher};
 use tracing::info;
 use alloy_evm::overrides::{apply_block_overrides, apply_state_overrides};
+use alloy_evm::Evm;
 use revm::{context_interface::Transaction, state::EvmState, DatabaseCommit};
 use revm_inspectors::tracing::{
     FourByteInspector, MuxInspector, TracingInspector, TracingInspectorConfig, TransactionContext,
 };
 use std::sync::Arc;
 use tokio::sync::{AcquireError, OwnedSemaphorePermit};
+use reth_rpc_eth_api::FromEvmError;
 
 /// `debug` API implementation.
 ///
@@ -940,14 +942,19 @@ where
 
                 info!(target: "rpc::debug", txs=txs.len(), "Executing stateDiffBundle");
 
+                let mut evm = this.eth_api().evm_config().evm_with_env(db, evm_env.clone());
+
                 for tx in txs {
-                    let (env, tx_env) = this
+                    let tx_env = this
                         .eth_api()
-                        .prepare_call_env(evm_env.clone(), tx, &mut db, EvmOverrides::default())?;
-                    let res = this.eth_api().transact(&mut db, env, tx_env)?;
-                    db.commit(res.state);
+                        .create_txn_env(&evm_env, tx, evm.db_mut())?;
+                    let res = evm
+                        .transact(tx_env)
+                        .map_err(Eth::Error::from_evm_err)?;
+                    evm.db_mut().commit(res.state);
                 }
 
+                let (mut db, _) = evm.finish();
                 let bundle_state = db.take_bundle();
                 let hashed = HashedPostState::from_bundle_state::<KeccakKeyHasher>(&bundle_state.state);
                 info!(target: "rpc::debug", accounts=hashed.accounts.len(), storages=hashed.storages.len(), "Finished stateDiffBundle");
